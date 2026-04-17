@@ -3,110 +3,119 @@ const axios = require('axios');
 require('dotenv').config();
 
 // ------------------ ТВІЙ ТОКЕН ------------------
-// Встав свій токен сюди (або в .env файл)
 const TOKEN = '8498488320:AAH38ABgEedG4DcC7lBykyUnVyZrMR2o_cw';
 
-// Створюємо бота (polling mode - не потребує домену)
-const bot = new TelegramBot(TOKEN, { polling: true });
+// Створюємо бота з налаштуваннями для бізнес-акаунта
+const bot = new TelegramBot(TOKEN, { 
+    polling: true,
+    // Дозволяємо обробку повідомлень з бізнес-акаунтів
+    onlyFirstMatch: false
+});
 
-console.log('🚀 Бот запущений! Очікую повідомлення...');
+console.log('🚀 Бот запущений для бізнес-акаунта!');
 
-// ------------------ ФУНКЦІЯ КАЛЬКУЛЯТОРА ------------------
+// ------------------ КАЛЬКУЛЯТОР ------------------
 function calculateExpression(expression) {
-    // Видаляємо знак = в кінці та пробіли
     let expr = expression.trim().replace(/=$/, '').replace(/\s/g, '');
     
-    // Перевірка на дозволені символи (лише цифри, оператори, дужки, крапка)
+    if (!/[+\-*/]/.test(expr)) return null;
+    
     if (!/^[0-9+\-*/().]+$/.test(expr)) {
-        return '❌ Помилка: дозволені лише цифри, + - * / ( ) .';
+        return '❌ Дозволені лише цифри, + - * / ( ) .';
     }
     
     try {
-        // Обчислюємо вираз (безпечно через Function)
         const result = Function('"use strict";return (' + expr + ')')();
-        
-        // Округлюємо результат
         let finalResult = result;
         if (typeof result === 'number' && !Number.isInteger(result)) {
             finalResult = Math.round(result * 100000) / 100000;
         }
-        
         return `📝 *Приклад:* \`${expr}\`\n✅ *Відповідь:* ${finalResult}`;
     } catch (error) {
-        return '❌ Помилка: неправильний вираз (перевір дужки або оператори)';
+        return '❌ Неправильний вираз (перевір дужки)';
     }
 }
 
-// ------------------ ФУНКЦІЯ ПОГОДИ ------------------
+// ------------------ ПОГОДА ------------------
 async function getWeather() {
     try {
         const url = 'https://wttr.in/Novovolynsk?format=%C+%t+%w&lang=uk';
         const response = await axios.get(url, { timeout: 10000 });
-        
         if (response.status === 200 && response.data) {
-            const weatherText = response.data.trim();
-            return `🌡 *Погода в Нововолинську:*\n${weatherText}`;
-        } else {
-            return '❌ Не вдалося отримати погоду. Спробуй пізніше.';
+            return `🌡 *Погода в Нововолинську:*\n${response.data.trim()}`;
         }
+        return '❌ Не вдалося отримати погоду';
     } catch (error) {
-        console.error('Помилка погоди:', error.message);
-        return '⚠️ Помилка підключення до сервера погоди.';
+        return '⚠️ Помилка підключення до сервера погоди';
     }
 }
 
-// ------------------ ОБРОБНИК КОМАНД ------------------
+// ------------------ КОМАНДИ ДЛЯ БІЗНЕС-АКАУНТА ------------------
+// Команда /start
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, '👋 Привіт! Я твій особистий бот.\nНадішли мені /help, щоб побачити всі команди.');
+    const chatType = msg.chat.type;
+    console.log(`Команда /start в чаті типу: ${chatType}`);
+    bot.sendMessage(chatId, '👋 Привіт! Я бот для вашого бізнес-акаунта.\nНадішли /help для списку команд.');
 });
 
+// Команда /help
 bot.onText(/\/help/, (msg) => {
     const chatId = msg.chat.id;
     const helpText = 
-        '*📋 Список команд:*\n\n' +
+        '📋 *Команди бота:*\n\n' +
         '/start - Запустити бота\n' +
         '/help - Показати це повідомлення\n' +
         '/weather - Погода в Нововолинську\n\n' +
-        '*🧮 Калькулятор:*\n' +
-        'Просто напиши математичний приклад, наприклад:\n' +
+        '🧮 *Калькулятор:*\n' +
+        'Напиши приклад, наприклад:\n' +
         '`(38+94)*73+29`\n' +
-        'або `2+2*2`\n\n' +
-        'Дозволені операції: + - * / ( ) .';
+        '`2+2*2`\n\n' +
+        '✅ Бот працює у вашому бізнес-акаунті!';
     
     bot.sendMessage(chatId, helpText, { parse_mode: 'Markdown' });
 });
 
+// Команда /weather
 bot.onText(/\/weather/, async (msg) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, '⏳ Отримую погоду для Нововолинська...');
-    
+    await bot.sendMessage(chatId, '⏳ Отримую погоду для Нововолинська...');
     const weatherInfo = await getWeather();
-    bot.sendMessage(chatId, weatherInfo, { parse_mode: 'Markdown' });
+    await bot.sendMessage(chatId, weatherInfo, { parse_mode: 'Markdown' });
 });
 
-// ------------------ ОБРОБНИК ТЕКСТОВИХ ПОВІДОМЛЕНЬ (КАЛЬКУЛЯТОР) ------------------
-bot.on('message', (msg) => {
+// ------------------ ОБРОБНИК ПОВІДОМЛЕНЬ В БІЗНЕС-ЧАТІ ------------------
+bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
+    const chatType = msg.chat.type;
     
-    // Ігноруємо команди (вони вже оброблені)
-    if (text.startsWith('/')) return;
+    // Пропускаємо команди
+    if (!text || text.startsWith('/')) return;
     
-    // Перевіряємо, чи є в тексті цифри та математичні оператори
+    console.log(`[${chatType}] Повідомлення: ${text}`);
+    
+    // Перевіряємо, чи це математичний вираз
     const hasDigits = /\d/.test(text);
     const hasOperators = /[+\-*/]/.test(text);
-    const hasParentheses = /[()]/.test(text);
     
-    if (hasDigits && (hasOperators || hasParentheses)) {
+    if (hasDigits && hasOperators) {
         const result = calculateExpression(text);
-        bot.sendMessage(chatId, result, { parse_mode: 'Markdown' });
+        if (result) {
+            await bot.sendMessage(chatId, result, { parse_mode: 'Markdown' });
+            console.log(`Відповідь надіслано в чат ${chatId}`);
+        }
     }
 });
 
-// ------------------ ОБРОБКА ПОМИЛОК ------------------
-bot.on('polling_error', (error) => {
-    console.error('Помилка polling:', error);
+// ------------------ ПЕРЕВІРКА ПІДКЛЮЧЕННЯ ------------------
+bot.getMe().then((botInfo) => {
+    console.log(`✅ Бот @${botInfo.username} запущений!`);
+    console.log(`📌 Очікую повідомлення в бізнес-акаунті...`);
 });
 
-console.log('✅ Бот готовий до роботи!');
+bot.on('polling_error', (error) => {
+    console.error('Помилка polling:', error.message);
+});
+
+console.log('🚀 Бот готовий до роботи в бізнес-акаунті!');
