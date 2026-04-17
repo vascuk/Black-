@@ -1,7 +1,7 @@
 const TelegramBot = require('node-telegram-bot-api');
 
-// ТВІЙ ТОКЕН
-const TOKEN = '8498488320:AAH38ABgEedG4DcC7lBykyUnVyZrMR2o_cw';
+// НОВИЙ ТОКЕН
+const TOKEN = '8498488320:AAF6NavsysnUgVBmLFnPXFhF3zQbXHVoFQo';
 
 console.log('🚀 Запуск тестового бота...');
 
