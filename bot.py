@@ -36,7 +36,8 @@ def safe_eval(expression: str):
                 result = int(result)
             else:
                 result = round(result, 5)
-        return f"📝 *Приклад:* `{expression}`\n✅ *Відповідь:* {result}"
+        # Використовуємо HTML замість Markdown
+        return f"📝 <b>Приклад:</b> <code>{expression}</code>\n✅ <b>Відповідь:</b> {result}"
     except ZeroDivisionError:
         return "❌ Помилка: ділення на нуль!"
     except Exception:
@@ -51,29 +52,30 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
-        "*📋 Список команд:*\n\n"
+        "📋 <b>Список команд:</b>\n\n"
         "/start - Запустити бота\n"
         "/help - Показати це повідомлення\n"
         "/weather - Погода в Нововолинську\n\n"
-        "*🧮 Калькулятор:*\n"
+        "🧮 <b>Калькулятор:</b>\n"
         "Просто напиши математичний приклад, наприклад:\n"
-        "`(38+94)*73+29`\n"
-        "або `2+2*2`\n\n"
+        "<code>(38+94)*73+29</code>\n"
+        "або <code>2+2*2</code>\n\n"
         "Дозволені операції: + - * / ( ) ."
     )
-    await update.message.reply_text(help_text, parse_mode="Markdown")
+    await update.message.reply_text(help_text, parse_mode="HTML")
 
 async def weather_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ Отримую погоду для Нововолинська...")
     weather_info = await get_weather()
-    await update.message.reply_text(weather_info, parse_mode="Markdown")
+    await update.message.reply_text(weather_info, parse_mode="Markdown")  # Для погоди Markdown підходить
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
+    # Перевіряємо, чи схоже на математичний вираз
     if any(c.isdigit() for c in text) or '(' in text or ')' in text:
         if any(op in text for op in ['+', '-', '*', '/']):
             result = safe_eval(text)
-            await update.message.reply_text(result, parse_mode="Markdown")
+            await update.message.reply_text(result, parse_mode="HTML")
 
 # ------------------ ЗАПУСК (LONG POLLING) ------------------
 def main():
@@ -89,7 +91,7 @@ def main():
     app.add_handler(CommandHandler("weather", weather_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    # Запускаємо polling (бот сам перевіряє нові повідомлення)
+    # Запускаємо polling
     print("✅ Бот працює! Очікую повідомлення...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
