@@ -3,6 +3,7 @@ import requests
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram.constants import ParseMode
+import asyncio
 
 # ------------------ ТВІЙ ТОКЕН ------------------
 TOKEN = "8498488320:AAH38ABgEedG4DcC7lBykyUnVyZrMR2o_cw"
@@ -16,7 +17,6 @@ logger = logging.getLogger(__name__)
 
 # ------------------ ПОГОДА ------------------
 async def get_weather():
-    """Отримує погоду для Нововолинська"""
     try:
         url = "https://wttr.in/Novovolynsk?format=%C+%t+%w&lang=uk"
         response = requests.get(url, timeout=10)
@@ -29,14 +29,10 @@ async def get_weather():
 
 # ------------------ КАЛЬКУЛЯТОР ------------------
 def safe_eval(expression: str):
-    """Безпечно обчислює математичний вираз"""
     expr = expression.strip().replace("=", "").replace(" ", "")
-    
-    # Дозволені символи
     allowed = "0123456789+-*/()."
     if not all(c in allowed for c in expr):
         return "❌ Помилка: дозволені лише цифри, + - * / ( ) ."
-    
     try:
         result = eval(expr, {"__builtins__": None}, {})
         if isinstance(result, float):
@@ -52,14 +48,12 @@ def safe_eval(expression: str):
 
 # ------------------ КОМАНДИ ------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Вітальне повідомлення"""
     await update.message.reply_text(
         "👋 Привіт! Я твій особистий бот.\n"
         "Надішли мені /help, щоб побачити всі команди."
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Список команд"""
     help_text = (
         "📋 <b>Список команд:</b>\n\n"
         "/start - Запустити бота\n"
@@ -74,41 +68,42 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(help_text, parse_mode=ParseMode.HTML)
 
 async def weather_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Погода в Нововолинську"""
     await update.message.reply_text("⏳ Отримую погоду для Нововолинська...")
     weather_info = await get_weather()
     await update.message.reply_text(weather_info, parse_mode=ParseMode.MARKDOWN)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обробка текстових повідомлень (калькулятор)"""
     text = update.message.text.strip()
-    
-    # Перевіряємо, чи схоже на математичний вираз
     if any(c.isdigit() for c in text) or '(' in text or ')' in text:
         if any(op in text for op in ['+', '-', '*', '/']):
             result = safe_eval(text)
             await update.message.reply_text(result, parse_mode=ParseMode.HTML)
 
 # ------------------ ЗАПУСК БОТА ------------------
-def main():
-    """Головна функція запуску бота"""
+async def main():
+    """Головна функція запуску бота з очищенням конфліктів"""
     print("🚀 Бот запускається...")
-    print("📌 Режим: особисті чати + групи + бізнес-акаунт")
+    print("🔄 Очищення старих з'єднань...")
     
     # Створюємо бота
     app = Application.builder().token(TOKEN).build()
     
-    # Додаємо обробники команд
+    # Примусово видаляємо webhook та зупиняємо старі polling-сесії
+    await app.bot.delete_webhook(drop_pending_updates=True)
+    print("✅ Webhook видалено")
+    
+    # Додаємо обробники
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("weather", weather_command))
-    
-    # Додаємо обробник текстових повідомлень (для калькулятора)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    # Запускаємо бота в режимі polling
-    print("✅ Бот працює! Очікую повідомлення...")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    print("✅ Бот готовий до роботи!")
+    print("📌 Режим: особисті чати + групи + бізнес-акаунт")
+    
+    # Запускаємо polling (без конфліктів)
+    await app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())
