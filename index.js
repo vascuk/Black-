@@ -1,11 +1,14 @@
 const { Bot } = require('grammy');
 const axios = require('axios');
 
-// НОВИЙ ТОКЕН
-const TOKEN = '8498488320:AAGG5g76J4V5IEhP5H-pAeA-C390NJgbeS8';
+// ТОКЕН БЕРЕТЬСЯ ЗІ ЗМІННИХ ОТОЧЕННЯ RAILWAY
+const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
-// Створюємо бота
-const bot = new Bot(TOKEN);
+if (!TOKEN) {
+    console.error('❌ ПОМИЛКА: Не знайдено змінну TELEGRAM_BOT_TOKEN!');
+    console.error('Додайте її в Railway: Variables → TELEGRAM_BOT_TOKEN = ваш_токен');
+    process.exit(1);
+}
 
 // ------------------ КАЛЬКУЛЯТОР ------------------
 function calculateExpression(expression) {
@@ -40,77 +43,89 @@ async function getWeather() {
     }
 }
 
-// ======================= ОСНОВНІ ОБРОБНИКИ =======================
-
-// 1. ОБРОБНИКИ ДЛЯ ЗВИЧАЙНИХ КОМАНД (для особистих чатів та груп)
-bot.command('start', async (ctx) => {
-    await ctx.reply('👋 Привіт! Я бот-помічник. Надішли /help для списку команд.');
-});
-bot.command('help', async (ctx) => {
-    const helpText = 
-        '📋 *Команди бота:*\n\n' +
-        '/start - Запустити бота\n' +
-        '/help - Показати це повідомлення\n' +
-        '/weather - Погода в Нововолинську\n\n' +
-        '🧮 *Калькулятор:*\n' +
-        'Напиши приклад, наприклад:\n' +
-        '`(38+94)*73+29`\n`2+2*2`\n\n' +
-        '✅ Бот працює в особистих чатах та бізнес-акаунті!';
-    await ctx.reply(helpText, { parse_mode: 'Markdown' });
-});
-bot.command('weather', async (ctx) => {
-    await ctx.reply('⏳ Отримую погоду...');
-    const weatherInfo = await getWeather();
-    await ctx.reply(weatherInfo, { parse_mode: 'Markdown' });
-});
-
-
-// 2. ОБРОБНИК ДЛЯ БІЗНЕС-ПОВІДОМЛЕНЬ (ГОЛОВНЕ)
-// Тут ми додаємо обробку команд для бізнес-чату
-bot.on('business_message', async (ctx) => {
-    const msg = ctx.businessMessage;
-    const text = msg.text;
-    const from = msg.from;
-
-    // Отримуємо інформацію про бізнес-з'єднання, щоб дізнатися ID вашого акаунту
-    const conn = await ctx.getBusinessConnection();
-    const employeeId = conn.user.id;
-
-    // Ігноруємо повідомлення, які ви (власник бізнес-акаунта) надіслали самі
-    if (from.id === employeeId) {
-        return;
+// ------------------ ФУНКЦІЯ СКИДАННЯ КОНФЛІКТУ ------------------
+async function resetBotConnections() {
+    console.log('🔄 Скидання старих з\'єднань...');
+    const tempBot = new Bot(TOKEN);
+    try {
+        await tempBot.api.deleteWebhook({ drop_pending_updates: true });
+        console.log('✅ Webhook видалено');
+    } catch (e) {
+        console.log('⚠️ Webhook не був встановлений');
     }
+    try {
+        await tempBot.stop();
+    } catch (e) {}
+    console.log('⏳ Зачекайте 2 секунди...');
+    await new Promise(resolve => setTimeout(resolve, 2000));
+}
 
-    // Якщо повідомлення не є текстовим, ігноруємо
-    if (!text) return;
+// ------------------ ОСНОВНИЙ БОТ ------------------
+async function startBot() {
+    await resetBotConnections();
 
-    // --- ЛОГІКА ОБРОБКИ КОМАНД ---
-    if (text.startsWith('/')) {
-        const command = text.split(' ')[0].toLowerCase(); // Отримуємо команду, наприклад '/weather'
-        
-        // Обробка /start
-        if (command === '/start') {
-            await ctx.reply('👋 Вітаю! Я ваш бізнес-асистент. Напишіть /help, щоб дізнатися, що я вмію.');
+    const bot = new Bot(TOKEN);
+
+    // =============== КОМАНДИ ===============
+    bot.command('start', async (ctx) => {
+        await ctx.reply('👋 Привіт! Я бот-помічник. Надішли /help для списку команд.');
+    });
+
+    bot.command('help', async (ctx) => {
+        const helpText = 
+            '📋 *Команди бота:*\n\n' +
+            '/start - Запустити бота\n' +
+            '/help - Показати це повідомлення\n' +
+            '/weather - Погода в Нововолинську\n\n' +
+            '🧮 *Калькулятор:*\n' +
+            'Просто напиши приклад, наприклад:\n' +
+            '`(38+94)*73+29`\n`2+2*2`\n\n' +
+            '✅ Бот працює в особистих чатах, групах та бізнес-акаунті!';
+        await ctx.reply(helpText, { parse_mode: 'Markdown' });
+    });
+
+    bot.command('weather', async (ctx) => {
+        await ctx.reply('⏳ Отримую погоду...');
+        const weatherInfo = await getWeather();
+        await ctx.reply(weatherInfo, { parse_mode: 'Markdown' });
+    });
+
+    // =============== БІЗНЕС-ПОВІДОМЛЕННЯ (ГОЛОВНЕ ДЛЯ ВАС) ===============
+    bot.on('business_message', async (ctx) => {
+        const msg = ctx.businessMessage;
+        const text = msg.text;
+        const from = msg.from;
+
+        // Отримуємо ID вашого акаунта (власника бізнесу)
+        let employeeId = null;
+        try {
+            const conn = await ctx.getBusinessConnection();
+            employeeId = conn.user.id;
+        } catch (e) {
+            console.log('Помилка отримання бізнес-з\'єднання:', e.message);
         }
-        // Обробка /help
-        else if (command === '/help') {
-            const helpText = 
-                '📋 *Команди вашого бізнес-асистента:*\n\n' +
-                '/start - Запустити асистента\n' +
-                '/help - Показати це повідомлення\n' +
-                '/weather - Погода в Нововолинську\n\n' +
-                '🧮 *Або просто надішліть математичний приклад, наприклад:* `(38+94)*73+29`';
-            await ctx.reply(helpText, { parse_mode: 'Markdown' });
+
+        // Ігноруємо повідомлення від вас самих
+        if (employeeId && from.id === employeeId) return;
+
+        if (!text) return;
+
+        // Обробка команд в бізнес-чаті
+        if (text.startsWith('/')) {
+            const command = text.split(' ')[0].toLowerCase();
+            if (command === '/start') {
+                await ctx.reply('👋 Вітаю! Я ваш бізнес-асистент. Напишіть /help для списку команд.');
+            } else if (command === '/help') {
+                await ctx.reply('📋 *Команди:* /start, /help, /weather\n\n🧮 Або надішліть математичний приклад, наприклад: `2+2*2`', { parse_mode: 'Markdown' });
+            } else if (command === '/weather') {
+                await ctx.reply('⏳ Отримую погоду...');
+                const weatherInfo = await getWeather();
+                await ctx.reply(weatherInfo, { parse_mode: 'Markdown' });
+            }
+            return;
         }
-        // Обробка /weather
-        else if (command === '/weather') {
-            await ctx.reply('⏳ Отримую погоду для Нововолинська...');
-            const weatherInfo = await getWeather();
-            await ctx.reply(weatherInfo, { parse_mode: 'Markdown' });
-        }
-    } 
-    // --- ЛОГІКА КАЛЬКУЛЯТОРА ДЛЯ ЗВИЧАЙНИХ ПОВІДОМЛЕНЬ ---
-    else {
+
+        // Калькулятор в бізнес-чаті
         const hasDigits = /\d/.test(text);
         const hasOperators = /[+\-*/]/.test(text);
         if (hasDigits && hasOperators) {
@@ -119,48 +134,45 @@ bot.on('business_message', async (ctx) => {
                 await ctx.reply(result, { parse_mode: 'Markdown' });
             }
         }
-    }
-});
+    });
 
-// 3. ОБРОБНИК ДЛЯ ЗВИЧАЙНИХ ПОВІДОМЛЕНЬ (для калькулятора в особистому чаті)
-bot.on('message:text', async (ctx) => {
-    const text = ctx.message.text;
-    if (text.startsWith('/')) return;
+    // =============== ЗВИЧАЙНІ ПОВІДОМЛЕННЯ (калькулятор в особистому чаті) ===============
+    bot.on('message:text', async (ctx) => {
+        const text = ctx.message.text;
+        if (text.startsWith('/')) return;
 
-    const hasDigits = /\d/.test(text);
-    const hasOperators = /[+\-*/]/.test(text);
-    if (hasDigits && hasOperators) {
-        const result = calculateExpression(text);
-        if (result) {
-            await ctx.reply(result, { parse_mode: 'Markdown' });
+        const hasDigits = /\d/.test(text);
+        const hasOperators = /[+\-*/]/.test(text);
+        if (hasDigits && hasOperators) {
+            const result = calculateExpression(text);
+            if (result) {
+                await ctx.reply(result, { parse_mode: 'Markdown' });
+            }
         }
-    }
-});
+    });
 
-// ======================= НАЛАШТУВАННЯ МЕНЮ КОМАНД ПРИ ЗАПУСКУ =======================
-async function setupCommands() {
-    const commandsList = [
+    // =============== МЕНЮ КОМАНД ===============
+    await bot.api.setMyCommands([
         { command: 'start', description: '🚀 Запустити бота' },
         { command: 'help', description: '❓ Показати список команд' },
         { command: 'weather', description: '🌡 Погода в Нововолинську' },
-    ];
-    // Цей рядок відповідає за появу підказок під час введення '/'
-    await bot.api.setMyCommands(commandsList);
-    console.log('✅ Меню команд успішно налаштовано!');
+    ]);
+    console.log('✅ Меню команд налаштовано');
+
+    // =============== ЗАПУСК ===============
+    bot.start({
+        onStart: (botInfo) => {
+            console.log(`========================================`);
+            console.log(`✅ Бот @${botInfo.username} успішно запущений!`);
+            console.log(`📌 Працює в особистих чатах, групах та бізнес-акаунті`);
+            console.log(`🚀 Очікую повідомлення...`);
+            console.log(`========================================`);
+        },
+    });
 }
 
-// ======================= ЗАПУСК БОТА =======================
-bot.start({
-    onStart: async (botInfo) => {
-        console.log(`✅ Бот @${botInfo.username} успішно запущений!`);
-        console.log(`📌 Бот працює в особистих чатах та бізнес-акаунті`);
-        await setupCommands(); // Викликаємо функцію для налаштування меню
-        console.log(`🚀 Бот готовий та чекає на повідомлення...`);
-    },
-});bot.start({
-    onStart: (botInfo) => {
-        console.log(`✅ Бот @${botInfo.username} запущений!`);
-        console.log(`📌 Працює в особистих чатах, групах та бізнес-акаунті`);
-        console.log(`🚀 Очікую повідомлення...`);
-    },
+// ЗАПУСК
+startBot().catch((err) => {
+    console.error('❌ КРИТИЧНА ПОМИЛКА:', err);
+    process.exit(1);
 });
