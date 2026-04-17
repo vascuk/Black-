@@ -1,7 +1,7 @@
 const { Bot } = require('grammy');
 const axios = require('axios');
 
-const TOKEN = '8498488320:AAGG5g76J4V5IEhP5H-pAeA-C390NJgbeS8';
+const TOKEN = '8498488320:AAFR7V3Da-4Hp6oG_COKQBKommNBnGA43y4';
 
 async function startBot() {
     // Скидаємо webhook перед запуском (це вирішує 90% проблем)
