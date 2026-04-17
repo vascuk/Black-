@@ -1,14 +1,10 @@
 const { Bot } = require('grammy');
 const axios = require('axios');
 
-// ТОКЕН БЕРЕТЬСЯ ЗІ ЗМІННИХ ОТОЧЕННЯ RAILWAY
-const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+// ТОКЕН ВСТАВЛЕНИЙ БЕЗПОСЕРЕДНЬО (для тесту)
+const TOKEN = '8498488320:AAGG5g76J4V5IEhP5H-pAeA-C390NJgbeS8';
 
-if (!TOKEN) {
-    console.error('❌ ПОМИЛКА: Не знайдено змінну TELEGRAM_BOT_TOKEN!');
-    console.error('Додайте її в Railway: Variables → TELEGRAM_BOT_TOKEN = ваш_токен');
-    process.exit(1);
-}
+console.log('🚀 Запуск бота з прямим токеном...');
 
 // ------------------ КАЛЬКУЛЯТОР ------------------
 function calculateExpression(expression) {
@@ -66,11 +62,10 @@ async function startBot() {
 
     const bot = new Bot(TOKEN);
 
-    // =============== КОМАНДИ ===============
+    // КОМАНДИ
     bot.command('start', async (ctx) => {
         await ctx.reply('👋 Привіт! Я бот-помічник. Надішли /help для списку команд.');
     });
-
     bot.command('help', async (ctx) => {
         const helpText = 
             '📋 *Команди бота:*\n\n' +
@@ -83,40 +78,33 @@ async function startBot() {
             '✅ Бот працює в особистих чатах, групах та бізнес-акаунті!';
         await ctx.reply(helpText, { parse_mode: 'Markdown' });
     });
-
     bot.command('weather', async (ctx) => {
         await ctx.reply('⏳ Отримую погоду...');
         const weatherInfo = await getWeather();
         await ctx.reply(weatherInfo, { parse_mode: 'Markdown' });
     });
 
-    // =============== БІЗНЕС-ПОВІДОМЛЕННЯ (ГОЛОВНЕ ДЛЯ ВАС) ===============
+    // БІЗНЕС-ПОВІДОМЛЕННЯ
     bot.on('business_message', async (ctx) => {
         const msg = ctx.businessMessage;
         const text = msg.text;
         const from = msg.from;
 
-        // Отримуємо ID вашого акаунта (власника бізнесу)
         let employeeId = null;
         try {
             const conn = await ctx.getBusinessConnection();
             employeeId = conn.user.id;
-        } catch (e) {
-            console.log('Помилка отримання бізнес-з\'єднання:', e.message);
-        }
+        } catch (e) {}
 
-        // Ігноруємо повідомлення від вас самих
         if (employeeId && from.id === employeeId) return;
-
         if (!text) return;
 
-        // Обробка команд в бізнес-чаті
         if (text.startsWith('/')) {
             const command = text.split(' ')[0].toLowerCase();
             if (command === '/start') {
-                await ctx.reply('👋 Вітаю! Я ваш бізнес-асистент. Напишіть /help для списку команд.');
+                await ctx.reply('👋 Вітаю! Я ваш бізнес-асистент.');
             } else if (command === '/help') {
-                await ctx.reply('📋 *Команди:* /start, /help, /weather\n\n🧮 Або надішліть математичний приклад, наприклад: `2+2*2`', { parse_mode: 'Markdown' });
+                await ctx.reply('📋 Команди: /start, /help, /weather\n🧮 Або приклад: `2+2*2`', { parse_mode: 'Markdown' });
             } else if (command === '/weather') {
                 await ctx.reply('⏳ Отримую погоду...');
                 const weatherInfo = await getWeather();
@@ -125,7 +113,6 @@ async function startBot() {
             return;
         }
 
-        // Калькулятор в бізнес-чаті
         const hasDigits = /\d/.test(text);
         const hasOperators = /[+\-*/]/.test(text);
         if (hasDigits && hasOperators) {
@@ -136,11 +123,10 @@ async function startBot() {
         }
     });
 
-    // =============== ЗВИЧАЙНІ ПОВІДОМЛЕННЯ (калькулятор в особистому чаті) ===============
+    // ЗВИЧАЙНІ ПОВІДОМЛЕННЯ
     bot.on('message:text', async (ctx) => {
         const text = ctx.message.text;
         if (text.startsWith('/')) return;
-
         const hasDigits = /\d/.test(text);
         const hasOperators = /[+\-*/]/.test(text);
         if (hasDigits && hasOperators) {
@@ -151,7 +137,7 @@ async function startBot() {
         }
     });
 
-    // =============== МЕНЮ КОМАНД ===============
+    // МЕНЮ КОМАНД
     await bot.api.setMyCommands([
         { command: 'start', description: '🚀 Запустити бота' },
         { command: 'help', description: '❓ Показати список команд' },
@@ -159,7 +145,7 @@ async function startBot() {
     ]);
     console.log('✅ Меню команд налаштовано');
 
-    // =============== ЗАПУСК ===============
+    // ЗАПУСК
     bot.start({
         onStart: (botInfo) => {
             console.log(`========================================`);
@@ -171,7 +157,6 @@ async function startBot() {
     });
 }
 
-// ЗАПУСК
 startBot().catch((err) => {
     console.error('❌ КРИТИЧНА ПОМИЛКА:', err);
     process.exit(1);
