@@ -2,7 +2,7 @@ const { Bot } = require('grammy');
 const axios = require('axios');
 
 // ТОКЕН (вставте свій)
-const TOKEN = '8498488320:AAGG5g76J4V5IEhP5H-pAeA-C390NJgbeS8';
+const TOKEN = '8498488320:AAFR7V3Da-4Hp6oG_COKQBKommNBnGA43y4';
 
 const bot = new Bot(TOKEN);
 
