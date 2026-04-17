@@ -3,7 +3,7 @@ const axios = require('axios');
 require('dotenv').config();
 
 // ------------------ ТВІЙ ТОКЕН ------------------
-const TOKEN = '8498488320:AAH38ABgEedG4DcC7lBykyUnVyZrMR2o_cw';
+const TOKEN = '8498488320:AAF6NavsysnUgVBmLFnPXFhF3zQbXHVoFQo';
 
 // Створюємо бота з налаштуваннями для бізнес-акаунта
 const bot = new TelegramBot(TOKEN, { 
