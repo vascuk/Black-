@@ -1,25 +1,36 @@
+import os
 import logging
 import requests
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from fastapi import FastAPI, Request
+from contextlib import asynccontextmanager
+import uvicorn
 
 # ------------------ НАЛАШТУВАННЯ ------------------
-# ВСТАВ СВІЙ ТОКЕН СЮДИ:
-TOKEN = "ТВІЙ_ТОКЕН_ТУТ"
+TOKEN = os.getenv("8498488320:AAH38ABgEedG4DcC7lBykyUnVyZrMR2o_cw")  # Токен зі змінних оточення Railway
+if not TOKEN:
+    raise ValueError("❌ Потрібно встановити змінну TELEGRAM_BOT_TOKEN в Railway!")
 
-# Вмикаємо логування (щоб бачити помилки)
+# Webhook URL (Railway сам дасть тобі домен, наприклад https://назва.up.railway.app)
+# WEBHOOK_URL = os.getenv("RAILWAY_PUBLIC_DOMAIN")  # Railway автоматично підставляє
+# Але простіше зібрати зі змінної:
+RAILWAY_URL = os.getenv("RAILWAY_PUBLIC_DOMAIN", "")
+if RAILWAY_URL:
+    WEBHOOK_URL = f"https://{RAILWAY_URL}/webhook"
+else:
+    WEBHOOK_URL = None
+    print("⚠️ RAILWAY_PUBLIC_DOMAIN не знайдено, webhook може не працювати")
+
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ------------------ ФУНКЦІЯ ПОГОДИ ------------------
 async def get_weather():
-    """Отримує погоду для Нововолинська з wttr.in (безкоштовно, без API-ключа)"""
     try:
-        # wttr.in повертає гарну текстову погоду. ?format=... робить коротко
         url = "https://wttr.in/Novovolynsk?format=%C+%t+%w&lang=uk"
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
-            # Очищаємо від зайвих пробілів
             weather_text = response.text.strip()
             return f"🌡 *Погода в Нововолинську:*\n{weather_text}"
         else:
@@ -30,23 +41,13 @@ async def get_weather():
 
 # ------------------ КАЛЬКУЛЯТОР ------------------
 def safe_eval(expression: str):
-    """Безпечно обчислює математичний вираз. Повертає рядок з результатом або помилкою."""
-    # Дозволяємо тільки цифри, оператори + - * / ( ) . та пробіли
-    # Також прибираємо знак = в кінці, якщо є
     expression = expression.strip().replace("=", "").replace(" ", "")
-    
-    # Перевіряємо, чи тільки дозволені символи
     allowed_chars = "0123456789+-*/()."
     if not all(c in allowed_chars for c in expression):
         return "❌ Помилка: дозволені лише цифри, + - * / ( ) ."
-    
     try:
-        # eval() - небезпечний, але з фільтром символів - прийнятно для простого калькулятора
-        # Обмежуємо глобальні/локальні змінні, щоб не можна було викликати функції
         result = eval(expression, {"__builtins__": None}, {})
-        # Округлюємо, якщо число з плаваючою крапкою
         if isinstance(result, float):
-            # Якщо результат майже цілий - показуємо як ціле
             if result.is_integer():
                 result = int(result)
             else:
@@ -80,40 +81,70 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(help_text, parse_mode="Markdown")
 
 async def weather_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Надсилаємо "Зачекай..." поки ходимо за погодою
     await update.message.reply_text("⏳ Отримую погоду для Нововолинська...")
     weather_info = await get_weather()
     await update.message.reply_text(weather_info, parse_mode="Markdown")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обробляє всі текстові повідомлення (для калькулятора)"""
     text = update.message.text.strip()
-    
-    # Якщо це не схоже на математичний вираз - ігноруємо
-    # Перевіряємо наявність цифр або дужок (щоб не реагувати на звичайні слова)
     if any(c.isdigit() for c in text) or '(' in text or ')' in text:
-        # Якщо є хоча б один математичний оператор + - * /
         if any(op in text for op in ['+', '-', '*', '/']):
             result = safe_eval(text)
             await update.message.reply_text(result, parse_mode="Markdown")
-    # Якщо не підійшло під калькулятор - нічого не відповідаємо
 
-# ------------------ ГОЛОВНА ФУНКЦІЯ ------------------
-def main():
-    # Створюємо додаток
-    app = Application.builder().token(TOKEN).build()
+# ------------------ FASTAPI ДЛЯ WEBHOOK ------------------
+application = None  # глобальний об'єкт бота
 
-    # Додаємо обробники команд
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("weather", weather_command))
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Старт бота
+    global application
+    application = (
+        Application.builder()
+        .token(TOKEN)
+        .updater(None)  # без polling, бо webhook
+        .build()
+    )
     
-    # Обробник всіх текстових повідомлень (для калькулятора)
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    # Додаємо обробники
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("weather", weather_command))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
+    await application.initialize()
+    
+    # Встановлюємо webhook
+    if WEBHOOK_URL:
+        await application.bot.set_webhook(WEBHOOK_URL)
+        logger.info(f"✅ Webhook встановлено: {WEBHOOK_URL}")
+    else:
+        logger.warning("⚠️ WEBHOOK_URL не встановлено")
+    
+    yield
+    
+    # Фіналізація
+    await application.bot.delete_webhook()
+    await application.shutdown()
 
-    # Запускаємо бота
-    print("✅ Бот запущений...")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+app = FastAPI(lifespan=lifespan)
 
+@app.post("/webhook")
+async def webhook(request: Request):
+    """Приймає оновлення від Telegram"""
+    if application is None:
+        return {"status": "error", "message": "Bot not ready"}
+    
+    data = await request.json()
+    update = Update.de_json(data, application.bot)
+    await application.process_update(update)
+    return {"status": "ok"}
+
+@app.get("/")
+async def root():
+    return {"status": "alive", "message": "Telegram bot is running"}
+
+# ------------------ ЗАПУСК ДЛЯ RAILWAY ------------------
 if __name__ == "__main__":
-    main()
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
