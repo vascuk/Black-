@@ -2,25 +2,14 @@ import logging
 import requests
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from fastapi import FastAPI, Request
-from contextlib import asynccontextmanager
-import uvicorn
 import os
 
-# ------------------ ТВІЙ ТОКЕН (ТЕСТОВИЙ) ------------------
+# ------------------ ТВІЙ ТОКЕН ------------------
 TOKEN = "8498488320:AAH38ABgEedG4DcC7lBykyUnVyZrMR2o_cw"
 
 # ------------------ НАЛАШТУВАННЯ ------------------
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-RAILWAY_URL = os.getenv("RAILWAY_PUBLIC_DOMAIN", "")
-if RAILWAY_URL:
-    WEBHOOK_URL = f"https://{RAILWAY_URL}/webhook"
-    logger.info(f"🌐 Webhook URL: {WEBHOOK_URL}")
-else:
-    WEBHOOK_URL = None
-    logger.warning("⚠️ RAILWAY_PUBLIC_DOMAIN не знайдено")
 
 # ------------------ ПОГОДА ------------------
 async def get_weather():
@@ -81,73 +70,28 @@ async def weather_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
-    # Перевіряємо, чи схоже на математичний вираз
     if any(c.isdigit() for c in text) or '(' in text or ')' in text:
         if any(op in text for op in ['+', '-', '*', '/']):
             result = safe_eval(text)
             await update.message.reply_text(result, parse_mode="Markdown")
 
-# ------------------ FASTAPI + WEBHOOK ------------------
-application = None
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global application
-    logger.info("🚀 Запуск бота...")
+# ------------------ ЗАПУСК (LONG POLLING) ------------------
+def main():
+    """Запуск бота через довге опитування - не потребує домену"""
+    print("🚀 Бот запускається...")
     
     # Створюємо бота
-    application = Application.builder().token(TOKEN).updater(None).build()
+    app = Application.builder().token(TOKEN).build()
     
     # Додаємо обробники
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("weather", weather_command))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("weather", weather_command))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    await application.initialize()
-    
-    # Встановлюємо webhook
-    if WEBHOOK_URL:
-        await application.bot.set_webhook(WEBHOOK_URL)
-        logger.info(f"✅ Webhook успішно встановлено: {WEBHOOK_URL}")
-    else:
-        logger.warning("⚠️ Webhook не встановлено (немає RAILWAY_PUBLIC_DOMAIN)")
-    
-    yield
-    
-    # Чистка при завершенні
-    await application.bot.delete_webhook()
-    await application.shutdown()
-    logger.info("🛑 Бот зупинено")
+    # Запускаємо polling (бот сам перевіряє нові повідомлення)
+    print("✅ Бот працює! Очікую повідомлення...")
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
 
-app = FastAPI(lifespan=lifespan)
-
-@app.post("/webhook")
-async def webhook(request: Request):
-    """Telegram надсилатиме оновлення сюди"""
-    if application is None:
-        logger.error("❌ Application не ініціалізовано")
-        return {"status": "error", "message": "Bot not ready"}
-    
-    try:
-        data = await request.json()
-        update = Update.de_json(data, application.bot)
-        await application.process_update(update)
-        return {"status": "ok"}
-    except Exception as e:
-        logger.error(f"Помилка webhook: {e}")
-        return {"status": "error", "message": str(e)}
-
-@app.get("/")
-async def root():
-    return {"status": "alive", "bot": "running"}
-
-@app.get("/health")
-async def health():
-    return {"status": "healthy"}
-
-# ------------------ ЗАПУСК ------------------
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8000))
-    logger.info(f"🔥 Запуск сервера на порту {port}")
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    main()
